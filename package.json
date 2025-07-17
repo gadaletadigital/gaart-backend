@@ -1,0 +1,24 @@
+{
+  "name": "gaart-backend",
+  "version": "1.0.0",
+  "description": "Backend per generazione immagini AI con Ideogram per gaart.it",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [
+    "AI",
+    "Ideogram",
+    "Shopify",
+    "Art",
+    "Backend"
+  ],
+  "author": "gaart.it",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "puppeteer": "^20.9.0",
+    "uuid": "^9.0.0"
+  }
+}
