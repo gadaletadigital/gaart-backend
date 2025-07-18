@@ -1,24 +1,15 @@
 {
   "name": "gaart-backend",
   "version": "1.0.0",
-  "description": "Backend per generazione immagini AI con Ideogram per gaart.it",
+  "description": "Backend AI generazione immagini con Playwright",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "postinstall": "npx playwright install --with-deps chromium"
   },
-  "keywords": [
-    "AI",
-    "Ideogram",
-    "Shopify",
-    "Art",
-    "Backend"
-  ],
-  "author": "gaart.it",
-  "license": "MIT",
   "dependencies": {
-    "dotenv": "^16.3.1",
     "express": "^4.18.2",
-    "puppeteer": "^19.0.0",
+    "playwright": "^1.47.2",
     "uuid": "^9.0.0"
   }
 }
