@@ -4,6 +4,7 @@ const fs = require("fs");
 
 const app = express();
 app.use(express.json());
+app.use(express.static("public"));
 app.use("/images", express.static("images"));
 
 app.post("/api/generate", async (req, res) => {
