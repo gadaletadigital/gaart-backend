@@ -1,94 +1,124 @@
-const puppeteer = require("puppeteer");
+/**
+ * generate.js - versione Playwright
+ * Login su Ideogram, generazione immagine da prompt, salvataggio locale.
+ *
+ * NOTE:
+ * - DOM di Ideogram può cambiare: aggiorna i selettori se necessario.
+ * - Il "ratio" e "style" vengono applicati nel testo del prompt come fallback.
+ *   Se vuoi cliccare bottoni UI specifici di Ideogram, vedi TODO più sotto.
+ */
+
+const { chromium } = require("playwright");
 const fs = require("fs");
 const path = require("path");
 const { v4: uuidv4 } = require("uuid");
 
-module.exports = async function generateImage(prompt, style, ratio) {
+async function generateImage(prompt, style, ratio) {
   const email = process.env.IDEO_EMAIL;
   const password = process.env.IDEO_PASSWORD;
 
-  console.log("🚀 Avvio generazione immagine con prompt:", prompt);
-  console.log("🎨 Stile:", style, " | 🖼️ Proporzioni:", ratio);
+  if (!email || !password) {
+    throw new Error("Credenziali Ideogram mancanti. Configura IDEO_EMAIL e IDEO_PASSWORD.");
+  }
 
-  const browser = await puppeteer.launch({
+  console.log("🚀 [generate] Avvio generazione:");
+  console.log("   Prompt:", prompt);
+  console.log("   Style :", style);
+  console.log("   Ratio :", ratio);
+
+  // Avvia browser
+  const browser = await chromium.launch({
     headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"]
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage"
+    ]
   });
 
-  const page = await browser.newPage();
+  const context = await browser.newContext();
+  const page = await context.newPage();
 
   try {
-    // Login
-    console.log("🔐 Navigazione al login di Ideogram...");
-    await page.goto("https://ideogram.ai/login", { waitUntil: "networkidle2" });
+    // LOGIN ----------------------------------------------------------
+    console.log("🔐 Navigazione login Ideogram...");
+    await page.goto("https://ideogram.ai/login", { waitUntil: "domcontentloaded", timeout: 60000 });
 
-    console.log("✍️ Inserimento credenziali...");
-    await page.type('input[type="email"]', email);
-    await page.click("button[type='submit']");
-    await page.waitForTimeout(2000);
-    await page.type('input[type="password"]', password);
-    await page.click("button[type='submit']");
-    await page.waitForNavigation({ waitUntil: "networkidle2" });
-    console.log("✅ Login effettuato");
+    // Email
+    await page.waitForSelector('input[type="email"]', { timeout: 30000 });
+    await page.fill('input[type="email"]', email);
+    await page.click('button[type="submit"]');
 
-    // Composizione prompt con stile e proporzioni
+    // Password
+    await page.waitForSelector('input[type="password"]', { timeout: 30000 });
+    await page.fill('input[type="password"]', password);
+    await page.click('button[type="submit"]');
+
+    // Attendi arrivo dashboard/home
+    await page.waitForLoadState("networkidle", { timeout: 60000 });
+    console.log("✅ Login riuscito.");
+
+    // GOTO HOME -------------------------------------------------------
+    // (spesso dopo login sei già lì, ma per sicurezza)
+    await page.goto("https://ideogram.ai/", { waitUntil: "domcontentloaded" });
+    await page.waitForLoadState("networkidle");
+
+    // PREPARA PROMPT --------------------------------------------------
+    // Fallback: includi style e ratio nel testo, finché non automatizzi i menu
     let finalPrompt = prompt;
     if (style) finalPrompt += `, style: ${style}`;
     if (ratio) finalPrompt += `, aspect ratio: ${ratio}`;
-    console.log("🧠 Prompt finale:", finalPrompt);
+    console.log("🧠 Prompt finale inviato:", finalPrompt);
 
-    // Vai alla home e inserisci il prompt
-    await page.goto("https://ideogram.ai/", { waitUntil: "networkidle2" });
-    console.log("📥 Inserimento prompt...");
-    await page.waitForSelector("textarea");
-    await page.type("textarea", finalPrompt);
+    // Trova textarea input
+    await page.waitForSelector("textarea", { timeout: 30000 });
+    await page.fill("textarea", finalPrompt);
+
+    // TODO (opzionale): selezionare lo stile o il ratio dall'interfaccia
+    // Esempio (placeholder, aggiornare con selettori reali):
+    // await page.click('[data-style="fantasy"]');
+    // await page.click('[data-ratio="7:10"]');
+
+    // INVIA GENERAZIONE -----------------------------------------------
     await page.keyboard.press("Enter");
+    console.log("⏳ Generazione avviata...");
 
-    // Attendi generazione
-    console.log("⏳ Attesa generazione immagine (circa 30 secondi)...");
-    await page.waitForTimeout(30000);
+    // Aspetta che compaiano risultati: cerca contenitore immagini generazione
+    // Ideogram genera più thumbnail; cerchiamo il primo <img> CDN dopo un po'.
+    const imageSelector = 'img[src^="https://"]';
+    await page.waitForSelector(imageSelector, { timeout: 60000 });
+    console.log("🖼️ Risultato trovato a schermo.");
 
-    // Trova la prima immagine generata
-    const imageElement = await page.$("img[src^='https://']");
+    // Prendi la prima immagine valida
+    const imageUrl = await page.$eval(imageSelector, el => el.src);
+    console.log("🔗 URL immagine:", imageUrl);
 
-    if (!imageElement) {
-      throw new Error("❌ Nessuna immagine trovata dopo la generazione.");
+    // SCARICA ---------------------------------------------------------
+    const response = await page.goto(imageUrl);
+    if (!response || !response.ok()) {
+      throw new Error("Download immagine fallito.");
     }
 
-    const imageUrl = await page.evaluate(el => el.src, imageElement);
-    console.log("🖼️ Immagine trovata:", imageUrl);
+    // Assicurati che la cartella esista
+    const imagesDir = path.join(__dirname, "images");
+    if (!fs.existsSync(imagesDir)) {
+      fs.mkdirSync(imagesDir, { recursive: true });
+    }
 
-    // Scarica e salva immagine
-    const viewSource = await page.goto(imageUrl);
     const id = uuidv4();
-    const imagePath = path.join(__dirname, "images", `${id}.jpg`);
-    fs.writeFileSync(imagePath, await viewSource.buffer());
-    console.log("💾 Immagine salvata in:", imagePath);
-
-    // Aggiungi info a gallery.json
-    const galleryPath = path.join(__dirname, "gallery.json");
-    let gallery = [];
-    if (fs.existsSync(galleryPath)) {
-      gallery = JSON.parse(fs.readFileSync(galleryPath));
-    }
-    gallery.push({
-      id,
-      prompt,
-      style,
-      ratio,
-      image: `/images/${id}.jpg`,
-      createdAt: new Date().toISOString()
-    });
-    fs.writeFileSync(galleryPath, JSON.stringify(gallery, null, 2));
-    console.log("📚 gallery.json aggiornato");
+    const outPath = path.join(imagesDir, `${id}.jpg`);
+    const buffer = await response.body();
+    fs.writeFileSync(outPath, buffer);
+    console.log("💾 Immagine salvata:", outPath);
 
     await browser.close();
-
     return id;
 
   } catch (err) {
-    console.error("❌ Errore durante la generazione dell'immagine:", err);
+    console.error("❌ [generate] Errore:", err);
     await browser.close();
     throw err;
   }
-};
+}
+
+module.exports = generateImage;
