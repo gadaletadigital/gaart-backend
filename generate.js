@@ -15,9 +15,9 @@ async function generateImage(prompt, style, ratio, imageId) {
   try {
     console.log("🌍 Navigazione verso Ideogram...");
     await page.goto("https://ideogram.ai/login", { waitUntil: "networkidle" });
-
-    // Screenshot per debug
     await page.screenshot({ path: "public/debug_login.png", fullPage: true });
+    // Screenshot per debug
+
 
     console.log("👁️ Attesa campo email...");
     await page.waitForSelector('input[type="email"]', { timeout: 60000 });
